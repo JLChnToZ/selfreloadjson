@@ -6,8 +6,8 @@
   var SelfReloadJSON = function SelfReloadJSON(options) {
     switch(typeof options) {
       case 'string': options = { fileName: options }; break;
-      case 'object': break;
-      default: return;
+      case 'object': case 'undefined': break;
+      default: throw new Error('Invalid options type.');
     }
 
     var updateFile, onFileChange, stop, resume, save;
@@ -15,12 +15,14 @@
 
     content = this;
 
-    options = _.defaults(options, {
+    options = _.defaults(options || {}, {
       fileName: '',
       encoding: 'utf8',
       additive: false,
       method: 'native',
-      interval: 5000
+      interval: 5000,
+      reviver: null,
+      replacer: null
     });
 
     content.stop = stop = function stop() {
@@ -54,12 +56,18 @@
     };
 
     content.save = save = function save(opts) {
-      if(!opts) opts = {};
+      opts = _.defaults(opts || {}, {
+        encoding: options.encoding,
+        replacer: options.replacer,
+        space: null
+      });
       updateFileLock = true;
-      try{
-        fs.writeFileSync(options.fileName, JSON.stringify(content), _.extend({
-          encoding: options.encoding
-        }, opts));
+      try {
+        fs.writeFileSync(
+          options.fileName,
+          JSON.stringify(content, opts.replacer, opts.space),
+          _.omit(opts, 'replacer', 'space')
+        );
       } finally {
         updateFileLock = false;
       }
@@ -82,13 +90,14 @@
         var rawFile = fs.readFileSync(options.fileName, {
           encoding: options.encoding
         });
-        var newContent = JSON.parse(rawFile);
+        var newContent = JSON.parse(rawFile, options.reviver);
         if(!options.additive) {
           var removeList = _.keys(content)
           for(var i = 0, l = removeList.length; i < l; i++)
             delete content[removeList[i]];
           if(stop) content.stop = stop;
           if(resume) content.resume = resume;
+          if(save) content.save = save;
         }
         _.extendOwn(content, newContent);
       } catch(err) {
