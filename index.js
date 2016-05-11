@@ -1,9 +1,16 @@
 (function() {
   var fs = require('fs'),
     path = require('path'),
+    util = require('util'),
+    EventEmitter = require('events').EventEmitter,
     _ = require('underscore');
 
+  var omitKeys = _.allKeys(new EventEmitter());
+  omitKeys.push('stop', 'resume', 'save', 'forceUpdate');
+
   var SelfReloadJSON = function SelfReloadJSON(options) {
+    EventEmitter.call(this);
+
     switch(typeof options) {
       case 'string': options = { fileName: options }; break;
       case 'object': case 'undefined': break;
@@ -65,7 +72,9 @@
       try {
         fs.writeFileSync(
           options.fileName,
-          JSON.stringify(content, opts.replacer, opts.space),
+          JSON.stringify(_.omit(content, function(v, k) {
+            return _.contains(omitKeys, k);
+          }), opts.replacer, opts.space),
           _.omit(opts, 'replacer', 'space')
         );
       } finally {
@@ -74,34 +83,39 @@
     };
 
     onFileChange = function onFileChange(a, b) {
-      if(a instanceof fs.Stats) {
-        if(a.mtime === b.mtime) return;
-        updateFile();
-      } else {
-        if(b !== fileName) return;
-        updateFile();
+      try {
+        if(a instanceof fs.Stats) {
+          if(a.mtime === b.mtime) return;
+          updateFile();
+        } else {
+          if(b !== fileName) return;
+          updateFile();
+        }
+      } catch (err) {
+        console.log(err.stack ? err.stack : err);
       }
     };
 
-    updateFile = function updateFile() {
+    content.forceUpdate = updateFile = function updateFile() {
       if(updateFileLock) return;
       updateFileLock = true;
       try {
         var rawFile = fs.readFileSync(options.fileName, {
           encoding: options.encoding
         });
-        var newContent = JSON.parse(rawFile, options.reviver);
+        var newContent = _.omit(JSON.parse(rawFile, options.reviver), function(v, k) {
+          return _.contains(omitKeys, k);
+        });
         if(!options.additive) {
-          var removeList = _.keys(content)
+          var removeList = _.chain(content).keys().difference(omitKeys).value();
           for(var i = 0, l = removeList.length; i < l; i++)
             delete content[removeList[i]];
-          if(stop) content.stop = stop;
-          if(resume) content.resume = resume;
-          if(save) content.save = save;
         }
         _.extendOwn(content, newContent);
+        content.emit('updated');
       } catch(err) {
         console.log(err.stack ? err.stack : err);
+        content.emit('error', err);
       } finally {
         updateFileLock = false;
       }
@@ -110,5 +124,6 @@
     resume();
   };
 
+  util.inherits(SelfReloadJSON, EventEmitter);
   module.exports = SelfReloadJSON;
 })();
