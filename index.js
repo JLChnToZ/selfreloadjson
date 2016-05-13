@@ -91,7 +91,7 @@
           if(b !== fileName) return;
           updateFile();
         }
-      } catch (err) {
+      } catch(err) {
         console.log(err.stack ? err.stack : err);
       }
     };
