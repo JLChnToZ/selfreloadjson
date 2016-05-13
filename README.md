@@ -1,5 +1,7 @@
 Self Reload JSON
 ================
+[![NPM](https://nodei.co/npm/self-reload-json.png?downloads=true&downloadRank=true&stars=true)](https://nodei.co/npm/self-reload-json/)
+
 Simple node.js module which will auto reload specified JSON file.
 The instance created with this module will act as the parsed JSON object itself once loaded, you can read and write JSON content directly with the instance, also it will update automatically when the source JSON file is changed. Optional there is a save function that allows you write the modified data back into the JSON file.
 
