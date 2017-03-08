@@ -1,129 +1,152 @@
-(function() {
-  var fs = require('fs'),
-    path = require('path'),
-    util = require('util'),
-    EventEmitter = require('events').EventEmitter,
-    _ = require('underscore');
+(() => {
+  'use strict';
+  const fs = require('fs');
+  const path = require('path');
+  const util = require('util');
+  const { EventEmitter } = require('events');
 
-  var omitKeys = _.allKeys(new EventEmitter());
-  omitKeys.push('stop', 'resume', 'save', 'forceUpdate');
+  const privateProps = Symbol('private');
+  const fileChanged = Symbol('onFileChange');
 
-  var SelfReloadJSON = function SelfReloadJSON(options) {
-    EventEmitter.call(this);
+  const omitKeys = Object.keys(SelfReloadJSON.prototype);
 
-    switch(typeof options) {
-      case 'string': options = { fileName: options }; break;
-      case 'object': case 'undefined': break;
-      default: throw new Error('Invalid options type.');
+  function deleteAll(obj, keys) {
+    for(const key in keys)
+      if(key in obj)
+        delete obj[key];
+    return obj;
+  }
+
+  function parseFile(fileName, encoding, reviver) {
+    let content = JSON.parse(fs.readFileSync(fileName, { encoding }), reviver);
+
+    if(typeof content !== 'object')
+      content = { value: content };
+
+    deleteAll(content, omitKeys);
+
+    return content;
+  }
+
+  class SelfReloadJSON extends EventEmitter {
+    constructor(options) {
+      super();
+      switch(typeof options) {
+        case 'string': options = { fileName: options }; break;
+        case 'object': case 'undefined': break;
+        default: throw new Error('Invalid options type.');
+      }
+
+      const internals = {
+        keys: [],
+        fileName: '',
+        watcher: null,
+        options: Object.assign({
+          fileName: '',
+          encoding: 'utf8',
+          additive: false,
+          method: 'native',
+          interval: 5000,
+          reviver: null,
+          replacer: null
+        }, options || {})
+      };
+
+      Object.defineProperty(this, privateProps, {
+        value: internals
+      });
+
+      this.resume();
     }
 
-    var updateFile, onFileChange, stop, resume, save;
-    var content, updateFileLock, fileName, watcher;
-
-    content = this;
-
-    options = _.defaults(options || {}, {
-      fileName: '',
-      encoding: 'utf8',
-      additive: false,
-      method: 'native',
-      interval: 5000,
-      reviver: null,
-      replacer: null
-    });
-
-    content.stop = stop = function stop() {
+    stop() {
+      const internals = this[privateProps];
+      const { watcher } = internals;
       if(watcher) {
         if(typeof watcher === 'string')
-          fs.unwatchFile(watcher, onFileChange);
+          fs.unwatchFile(watcher, this[fileChanged]);
         else
           watcher.close();
-        watcher = null;
+        internals.watcher = null;
       }
-    };
+    }
 
-    content.resume = resume = function resume() {
-      stop();
-      options.fileName = path.resolve(options.fileName);
-      fileName = path.basename(options.fileName);
+    resume() {
+      this.stop();
+      const internals = this[privateProps];
+      const { fileName, interval, encoding } = internals.options;
+
+      options.fileName = path.resolve(fileName);
+      internals.fileName = path.basename(fileName);
+
       switch(options.method) {
         case 'native':
-          watcher = fs.watch(options.fileName, {
-            encoding: options.encoding
-          }, onFileChange);
+          internals.watcher = fs.watch(fileName, { encoding }, this[fileChanged]);
           break;
+
         case 'polling':
-          watcher = options.fileName;
-          fs.watchFile(options.fileName, {
-            interval: options.interval
-          }, onFileChange);
+          internals.watcher = fileName;
+          fs.watchFile(fileName, { interval }, this[fileChanged]);
           break;
       }
-      updateFile();
-    };
+      this.forceUpdate();
+    }
 
-    content.save = save = function save(opts) {
-      opts = _.defaults(opts || {}, {
-        encoding: options.encoding,
-        replacer: options.replacer,
-        space: null
-      });
-      updateFileLock = true;
+    [fileChanged](a, b) {
       try {
-        fs.writeFileSync(
-          options.fileName,
-          JSON.stringify(_.omit(content, function(v, k) {
-            return _.contains(omitKeys, k);
-          }), opts.replacer, opts.space),
-          _.omit(opts, 'replacer', 'space')
-        );
-      } finally {
-        updateFileLock = false;
-      }
-    };
-
-    onFileChange = function onFileChange(a, b) {
-      try {
+        const internals = this[privateProps];
         if(a instanceof fs.Stats) {
           if(a.mtime === b.mtime) return;
-          updateFile();
+          this.forceUpdate();
         } else {
-          if(b !== fileName) return;
-          updateFile();
+          if(b !== internals.fileName) return;
+          this.forceUpdate();
         }
       } catch(err) {
-        console.log(err.stack ? err.stack : err);
+        console.log(err.stack || err);
       }
-    };
+    }
 
-    content.forceUpdate = updateFile = function updateFile() {
-      if(updateFileLock) return;
-      updateFileLock = true;
+    save(options) {
+      const internals = this[privateProps];
+      options = Object.assign({ space: null }, internals.options, options || {});
+      internals.updateFileLock = true;
       try {
-        var rawFile = fs.readFileSync(options.fileName, {
-          encoding: options.encoding
-        });
-        var newContent = _.omit(JSON.parse(rawFile, options.reviver), function(v, k) {
-          return _.contains(omitKeys, k);
-        });
-        if(!options.additive) {
-          var removeList = _.chain(content).keys().difference(omitKeys).value();
-          for(var i = 0, l = removeList.length; i < l; i++)
-            delete content[removeList[i]];
-        }
-        _.extendOwn(content, newContent);
-        content.emit('updated');
-      } catch(err) {
-        console.log(err.stack ? err.stack : err);
-        content.emit('error', err);
+        fs.writeFileSync(
+          internals.options.fileName,
+          JSON.stringify(this, options.replacer, options.space),
+          options
+        );
       } finally {
-        updateFileLock = false;
+        internals.updateFileLock = false;
       }
-    };
+    }
 
-    resume();
-  };
+    forceUpdate() {
+      const internals = this[privateProps];
+      const { fileName, encoding, reviver, additive } = internals.options;
+      if(internals.updateFileLock) return;
+      internals.updateFileLock = true;
+      try {
+        const newContent = parseFile(fileName, encoding, reviver);
+        if(additive) {
+          Object.assign(this, newContent);
+          Object.assign(internals.newContent, newContent);
+        } else {
+          deleteAll(this, internals.keys);
+          Object.assign(this, newContent);
+          internals.newContent = newContent;
+        }
+        internals.keys = Object.keys(internals.newContent);
+        this.emit('updated');
+      } catch(err) {
+        console.log(err.stack || err);
+        this.emit('error', err);
+      } finally {
+        internals.updateFileLock = false;
+      }
+    }
+  }
 
-  util.inherits(SelfReloadJSON, EventEmitter);
   module.exports = SelfReloadJSON;
 })();
