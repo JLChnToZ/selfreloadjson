@@ -3,44 +3,59 @@
   const fs = require('fs');
   const path = require('path');
   const util = require('util');
-  const { EventEmitter } = require('events');
+  const EventEmitter = require('events').EventEmitter;
 
   const privateProps = Symbol('private');
   const fileChanged = Symbol('onFileChange');
 
-  const omitKeys = Object.keys(SelfReloadJSON.prototype);
-
   function deleteAll(obj, keys) {
-    for(const key in keys)
+    for(const key of keys)
       if(key in obj)
         delete obj[key];
     return obj;
   }
 
-  function parseFile(fileName, encoding, reviver) {
-    let content = JSON.parse(fs.readFileSync(fileName, { encoding }), reviver);
-
-    if(typeof content !== 'object')
-      content = { value: content };
-
-    deleteAll(content, omitKeys);
-
-    return content;
+  function getAllProperties(obj, output) {
+    output = output || [];
+    if(!obj) return output;
+    Array.prototype.push.apply(output, Object.getOwnPropertyNames(obj));
+    return getAllProperties(Object.getPrototypeOf(obj), output);
   }
 
   class SelfReloadJSON extends EventEmitter {
     constructor(options) {
       super();
+
       switch(typeof options) {
         case 'string': options = { fileName: options }; break;
         case 'object': case 'undefined': break;
         default: throw new Error('Invalid options type.');
       }
 
-      const internals = {
+      // Recursive fetch all property names even in prototype
+      // which will be omitted from fetched JSON object.
+      const localOmitKeys = getAllProperties(this);
+
+      // Convert all internal values to non-enumerable,
+      // prevents those values exposed by save function.
+      for(let key in this) {
+        const value = this[key];
+        delete this[key];
+        Object.defineProperty(this, key, {
+          value,
+          enumerable: false,
+          configurable: true,
+          writable: true
+        });
+      }
+
+      this[privateProps] = {
         keys: [],
         fileName: '',
         watcher: null,
+        content: null,
+        fileChanged: this[fileChanged].bind(this),
+        omitKeys: localOmitKeys,
         options: Object.assign({
           fileName: '',
           encoding: 'utf8',
@@ -52,41 +67,48 @@
         }, options || {})
       };
 
-      Object.defineProperty(this, privateProps, {
-        value: internals
-      });
-
       this.resume();
     }
 
     stop() {
       const internals = this[privateProps];
-      const { watcher } = internals;
-      if(watcher) {
-        if(typeof watcher === 'string')
-          fs.unwatchFile(watcher, this[fileChanged]);
-        else
-          watcher.close();
-        internals.watcher = null;
-      }
+      if(!internals.watcher) return;
+      if(typeof internals.watcher === 'string')
+        fs.unwatchFile(internals.watcher, internals.fileChanged);
+      else
+        internals.watcher.close();
+      internals.watcher = null;
     }
 
     resume() {
       this.stop();
       const internals = this[privateProps];
-      const { fileName, interval, encoding } = internals.options;
+      const options = internals.options;
 
-      options.fileName = path.resolve(fileName);
-      internals.fileName = path.basename(fileName);
+      if(internals.retryTimer) {
+        clearImmediate(internals.retryTimer);
+        delete internals.retryTimer;
+      }
+
+      options.fileName = path.resolve(options.fileName);
+      internals.fileName = path.basename(options.fileName);
 
       switch(options.method) {
         case 'native':
-          internals.watcher = fs.watch(fileName, { encoding }, this[fileChanged]);
+          internals.watcher = fs.watch(
+            options.fileName,
+            { encoding: options.encoding },
+            internals.fileChanged
+          );
           break;
 
         case 'polling':
-          internals.watcher = fileName;
-          fs.watchFile(fileName, { interval }, this[fileChanged]);
+          internals.watcher = options.fileName;
+          fs.watchFile(
+            options.fileName,
+            { interval: options.interval },
+            internals.fileChanged
+          );
           break;
       }
       this.forceUpdate();
@@ -94,14 +116,12 @@
 
     [fileChanged](a, b) {
       try {
-        const internals = this[privateProps];
         if(a instanceof fs.Stats) {
           if(a.mtime === b.mtime) return;
-          this.forceUpdate();
         } else {
-          if(b !== internals.fileName) return;
-          this.forceUpdate();
+          if(b !== this[privateProps].fileName) return;
         }
+        this.forceUpdate();
       } catch(err) {
         console.log(err.stack || err);
       }
@@ -109,14 +129,16 @@
 
     save(options) {
       const internals = this[privateProps];
-      options = Object.assign({ space: null }, internals.options, options || {});
+      options = Object.assign(
+        { space: null },
+        internals.options,
+        options || {}
+      );
       internals.updateFileLock = true;
       try {
-        fs.writeFileSync(
-          internals.options.fileName,
-          JSON.stringify(this, options.replacer, options.space),
-          options
-        );
+        const json = JSON.stringify(this, options.replacer, options.space);
+        fs.writeFileSync(internals.options.fileName, json, options);
+        internals.raw = json;
       } finally {
         internals.updateFileLock = false;
       }
@@ -124,27 +146,53 @@
 
     forceUpdate() {
       const internals = this[privateProps];
-      const { fileName, encoding, reviver, additive } = internals.options;
+      const options = internals.options;
       if(internals.updateFileLock) return;
       internals.updateFileLock = true;
+
+      if(internals.retryTimer) {
+        clearImmediate(internals.retryTimer);
+        delete internals.retryTimer;
+      }
+
       try {
-        const newContent = parseFile(fileName, encoding, reviver);
-        if(additive) {
-          Object.assign(this, newContent);
+        const rawContent = fs.readFileSync(options.fileName, { encoding: options.encoding });
+        if(internals.raw === rawContent) return;
+        internals.raw = rawContent;
+
+        let newContent = JSON.parse(rawContent, options.reviver);
+        if(typeof newContent !== 'object')
+          newContent = { value: newContent };
+
+        // Ignore all values which defined internally
+        const safeContent = deleteAll(Object.assign({}, newContent), internals.omitKeys);
+
+        if(options.additive) {
+          Object.assign(this, safeContent);
           Object.assign(internals.newContent, newContent);
         } else {
           deleteAll(this, internals.keys);
-          Object.assign(this, newContent);
+          Object.assign(this, safeContent);
           internals.newContent = newContent;
         }
+
         internals.keys = Object.keys(internals.newContent);
-        this.emit('updated');
       } catch(err) {
-        console.log(err.stack || err);
+        switch(err && err.code) {
+          case 'EBUSY':
+          case 'EAGAIN':
+            internals.retryTimer = setImmediate(this.forceUpdate.bind(this));
+            return;
+        }
+
+        console.error(err.stack || err);
         this.emit('error', err);
+        return;
       } finally {
         internals.updateFileLock = false;
       }
+
+      this.emit('updated', internals.newContent);
     }
   }
 

@@ -9,7 +9,9 @@ Installation
 ------------
 
 With NPM:
-`npm install self-reload-json`
+```sh
+$ npm install self-reload-json
+```
 
 Then in script file:
 ```javascript
@@ -23,6 +25,8 @@ To load a JSON file:
 var config = new SelfReloadJSON(___dirname + '/config.json');
 ```
 Then all loaded JSON content will be the part of the instance, just change it freely, then you can use the save function to save the changes back to the JSON file.
+
+The `SelfReloadJSON` class itself inherits [`EventEmitter`](https://nodejs.org/api/events.html#events_class_eventemitter).
 
 ### Methods
 #### `new SelfReloadJSON(options | fileName)`
@@ -55,15 +59,15 @@ Write the changes back to the JSON file.
 ### Events
 As this class is also inherits from `EventHandler` class of Node.JS, it will expose 2 event types with event handler.
 
-#### `on('updated', function() { ... })`
-This event will be emitted after the JSON content refreshed.
+#### `on('updated', function(json) { ... })`
+This event will be emitted after the JSON content refreshed. The `json` parameter is the raw parsed JSON object (not the SelfReloadJSON instance itself).
 
 #### `on('error', function(err) { ... })`
 This event will be emitted while error occured when loading the updated JSON file. The `err` parameter will be the error thrown by the updater.
 
 Limit
 -----
-If a property name conflicts with the function names described above, they will be ignored.
+If a property name conflicts with the function names described above, they will be ignored. To get those values you should use `updated` event listener instead.
 
 license
 -------

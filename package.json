@@ -20,7 +20,5 @@
     "url": "https://github.com/JLChnToZ/selfreloadjson/issues"
   },
   "homepage": "https://github.com/JLChnToZ/selfreloadjson#readme",
-  "dependencies": {
-    "underscore": "^1.8.3"
-  }
+  "dependencies": {}
 }
