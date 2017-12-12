@@ -1,8 +1,8 @@
 Self Reload JSON
 ================
 [![GitHub issues](https://img.shields.io/github/issues/JLChnToZ/selfreloadjson.svg)](https://github.com/JLChnToZ/selfreloadjson/issues)
-[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/JLChnToZ/selfreloadjson/blob/master/LICENSE)
-[![Node version](https://img.shields.io/node/v/selfreloadjson.svg)](https://github.com/JLChnToZ/selfreloadjson/blob/master/package.json)
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Node version](https://img.shields.io/node/v/self-reload-json.svg)](package.json)
 [![NPM version](https://img.shields.io/npm/v/self-reload-json.svg)](https://www.npmjs.com/package/self-reload-json)
 [![NPM downloads](https://img.shields.io/npm/dt/self-reload-json.svg)](https://www.npmjs.com/package/self-reload-json)
 
