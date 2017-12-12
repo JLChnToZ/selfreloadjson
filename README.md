@@ -1,6 +1,10 @@
 Self Reload JSON
 ================
-[![NPM](https://nodei.co/npm/self-reload-json.png?downloads=true&downloadRank=true&stars=true)](https://nodei.co/npm/self-reload-json/)
+[![GitHub issues](https://img.shields.io/github/issues/JLChnToZ/selfreloadjson.svg)](https://github.com/JLChnToZ/selfreloadjson/issues)
+[![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/JLChnToZ/selfreloadjson/blob/master/LICENSE)
+[![Node version](https://img.shields.io/node/v/selfreloadjson.svg)](https://github.com/JLChnToZ/selfreloadjson/blob/master/package.json)
+[![NPM version](https://img.shields.io/npm/v/self-reload-json.svg)](https://www.npmjs.com/package/self-reload-json)
+[![NPM downloads](https://img.shields.io/npm/dt/self-reload-json.svg)](https://www.npmjs.com/package/self-reload-json)
 
 Simple node.js module which will auto reload specified JSON file.
 The instance created with this module will act as the parsed JSON object itself once loaded, you can read and write JSON content directly with the instance, also it will update automatically when the source JSON file is changed. Optional there is a save function that allows you write the modified data back into the JSON file.
@@ -39,6 +43,8 @@ Construct the instance of self reload JSON file.
   - **interval** - integer, the checking interval if 'polling' mode is used. Default is `5000` milliseconds.
   - **reviver** - function, the [reviver](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse#Using_the_reviver_parameter) function when parsing JSON. Default is `null`.
   - **replacer** - either number, string or function, the [replacer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify#The_replacer_parameter) function when converting JSON object back to string. You can override this option while calling `save` (see below). Default is `null`.
+  - **depth** - integer, depth of deep patching which try to keeps child object with same references, 0 to disable, negative values to apply all. Default is -1.
+  - **delay** - integer, set the delay time to trigger update the object in order to prevent event triggered several times or sometimes throws error because of trying to read the source JSON file but it is not yet completely updated. Default is 0 (immediately).
 
 #### `stop()`
 Stop watching the changes of the JSON file. You can use `resume` to continue watching the changes.
